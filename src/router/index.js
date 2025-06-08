@@ -1,26 +1,28 @@
-import { createWebHashHistory, createRouter } from "vue-router";
+import { createRouter, createWebHistory } from "vue-router";
+import { useUserStore } from "../store/userStore";
 
 const routes = [
-    {
-        path : '/',
-        name : 'Home',
-        component : () => import ('../views/HomePage.vue')
-    },
-    {
-        path : '/login',
-        name : 'Login',
-        component : () => import ('../views/LoginPage.vue')
-    },
-    {
-        path : '/login/admin',
-        name : 'AdminLogin',
-        component : () => import ('../views/AdminPage.vue')
-    }
+  {
+    path: '/',
+    name: 'Login',
+    component: () => import('../views/Login.vue')
+  }
 ]
 
 const router = createRouter({
-    history: createWebHashHistory(),
-    routes
-});
+  history: createWebHistory(),
+  routes
+})
 
-export default router;
+// 路由守卫：判断是否登录
+router.beforeEach((to, from, next) => {
+  const userStore = useUserStore()
+
+  if (to.meta.requiresAuth && !userStore.isLoggedIn) {
+    next('/login')
+  } else {
+    next()
+  }
+})
+
+export default router
