@@ -4,8 +4,18 @@ import { useUserStore } from "../store/userStore";
 const routes = [
   {
     path: '/',
-    name: 'Login',
-    component: () => import('../views/Login.vue')
+    name: 'Home',
+    component: () => import('../views/Home.vue')
+  },
+  {
+    path: '/category',
+    name: 'Category',
+    component: () => import('../views/Category.vue')
+  },
+  {
+    path: '/news/:id',
+    name: 'News',
+    component: () => import('../views/News.vue')
   }
 ]
 
