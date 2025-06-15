@@ -1,56 +1,63 @@
 <template>
-  <el-container>
-    <el-aside width="200px">
-      <CategoryList :categories="categories" :activeId="Number(categoryId)" />
-    </el-aside>
-    <el-main>
-      <h2>分类：{{ categoryName }}</h2>
-      <NewsList :newsList="newsList" @select="goToDetail" />
-    </el-main>
-  </el-container>
+  <div>
+    <el-button @click="goBack" style="margin-bottom: 20px">
+      <el-icon><ArrowLeft /></el-icon>
+      返回分类列表
+    </el-button>
+    
+    <h2>{{ categoryName }}</h2>
+    
+    <div v-if="loading">加载中...</div>
+    <NewsList 
+      v-else-if="newsStore.newsList.length > 0" 
+      :newsList="newsStore.newsList" 
+      @select="goToDetail" 
+    />
+    <div v-else style="text-align: center; color: #999; margin-top: 50px">
+      该分类下暂无新闻
+    </div>
+  </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import CategoryList from '../components/CategoryList.vue'
+import { ArrowLeft } from '@element-plus/icons-vue'
+import { useNewsStore } from '../store/news'
 import NewsList from '../components/NewsList.vue'
-import axios from '../utils/axios'
 
-const categories = ref([])
-const newsList = ref([])
 const route = useRoute()
 const router = useRouter()
+const newsStore = useNewsStore()
+const loading = ref(true)
 
-const categoryId = ref(route.query.categoryId || '')
-const categoryName = ref('')
-
-watch(() => route.query.categoryId, (val) => {
-  categoryId.value = val
-  fetchNews()
+const categoryId = computed(() => route.params.categoryId)
+const categoryName = computed(() => {
+  const cat = newsStore.categories.find(c => c.id == categoryId.value)
+  return cat ? cat.name : '未知分类'
 })
 
 onMounted(async () => {
-  const res = await axios.get('/categories')
-  categories.value = res.data
-  updateCategoryName()
-  fetchNews()
+  try {
+    // 如果分类数据还没加载，先加载分类
+    if (newsStore.categories.length === 0) {
+      await newsStore.loadCategories()
+    }
+    
+    // 加载该分类下的新闻
+    await newsStore.loadNewsByCategory(categoryId.value)
+  } catch (error) {
+    console.error('获取数据失败:', error)
+  } finally {
+    loading.value = false
+  }
 })
 
-function updateCategoryName() {
-  const cat = categories.value.find(c => c.id == categoryId.value)
-  categoryName.value = cat ? cat.name : '未知分类'
+function goBack() {
+  router.push({ name: 'Home' })
 }
 
-async function fetchNews() {
-  const res = await axios.get('/news', {
-    params: { categoryId: categoryId.value }
-  })
-  newsList.value = res.data.list
-  updateCategoryName()
-}
-
-function goToDetail(id) {
-  router.push({ name: 'News', params: { id } })
+function goToDetail(newsId) {
+  router.push({ name: 'News', params: { id: newsId } })
 }
 </script>

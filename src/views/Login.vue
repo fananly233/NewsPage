@@ -13,7 +13,13 @@
               <el-input v-model="form.code" placeholder="请输入验证码" />
             </el-col>
             <el-col :span="10">
-              <el-button @click="getCode" type="primary" plain style="width: 100%;" :disabled="loading">
+              <el-button 
+                @click="getCode" 
+                type="primary" 
+                plain 
+                style="width: 100%;" 
+                :disabled="countdown > 0 || loading"
+              >
                 {{ countdown > 0 ? `${countdown}秒后重试` : '获取验证码' }}
               </el-button>
             </el-col>
@@ -35,6 +41,14 @@
       
       <div class="register-link">
         还没有账号？<el-link type="primary" @click="goToRegister" :underline="false">立即注册</el-link>
+      </div>
+      
+      <div class="test-accounts">
+        <h4>测试账号：</h4>
+        <p>管理员：15955434043 - 可进入管理后台</p>
+        <p>编辑：15955428738 - 可进入管理后台</p>
+        <p>记者：15955428739 - 可进入管理后台</p>
+        <p>其他手机号：游客权限 - 只能访问首页</p>
       </div>
     </el-card>
   </div>
@@ -68,11 +82,19 @@ const rules = {
 }
 
 const mockCode = ref('')
+const realCode = ref('')
 const loading = ref(false)
 const countdown = ref(0)
 
-// 页面加载时检查本地存储中是否有保存的手机号
+// 页面加载时检查登录状态和本地存储
 onMounted(() => {
+  // 如果已经登录，根据角色跳转不同页面
+  if (userStore.isLoggedIn) {
+    redirectAfterLogin(userStore.role)
+    return
+  }
+
+  // 检查本地存储中是否有保存的手机号
   const savedPhone = localStorage.getItem('rememberedPhone')
   if (savedPhone) {
     form.value.phone = savedPhone
@@ -90,7 +112,20 @@ function startCountdown() {
   }, 1000)
 }
 
+// 根据用户角色决定登录后跳转页面
+function redirectAfterLogin(role) {
+  if (role === 'visitor') {
+    router.push('/') // 游客跳转到首页
+  } else {
+    router.push('/admin') // 其他角色跳转到管理后台
+  }
+}
+
 async function getCode() {
+  // 验证手机号格式
+  if (!form.value.phone) {
+    return ElMessage.warning('请输入手机号')
+  }
   if (!form.value.phone.match(/^1[3-9]\d{9}$/)) {
     return ElMessage.warning('请输入正确的手机号')
   }
@@ -99,15 +134,26 @@ async function getCode() {
 
   loading.value = true
   try {
-    const res = await api.get('/api/sendCode', { params: { phone: form.value.phone } })
+    const res = await api.get('/api/sendCode', { 
+      params: { phone: form.value.phone } 
+    })
+    
     if (res.code === 200) {
+      // 保存真实的验证码用于登录验证
+      realCode.value = res.data.verifyCode
+      // 显示Mock验证码给用户看
       mockCode.value = res.data.verifyCode
+      // 自动填充验证码（方便测试）
+      form.value.code = res.data.verifyCode
+      
       ElMessage.success('验证码已发送')
-      form.value.code = res.data.verifyCode // 自动填充（方便测试）
       startCountdown()
+    } else {
+      ElMessage.error(res.msg || '获取验证码失败')
     }
   } catch (e) {
-    ElMessage.error('获取验证码失败')
+    console.error('获取验证码失败:', e)
+    ElMessage.error('获取验证码失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -115,20 +161,24 @@ async function getCode() {
 
 async function onLogin() {
   try {
-    // 等待表单验证结果
-    await formRef.value.validate((valid, fields) => {
-      if (!valid) {
-        console.log('验证失败:', fields);
-        return false;
-      }
-      console.log('验证结果:', valid);
-      return true;
-    });
+    // 表单验证
+    const valid = await formRef.value.validate()
+    if (!valid) {
+      return
+    }
+
+    // 检查是否已获取验证码
+    if (!realCode.value) {
+      return ElMessage.warning('请先获取验证码')
+    }
     
     loading.value = true
+    
+    // 调用登录接口
     const res = await api.post('/api/login', {
       phone: form.value.phone,
-      code: form.value.code
+      code: form.value.code,
+      realCode: realCode.value // 传递真实验证码用于后端验证
     })
 
     if (res.code === 200 && res.data?.role) {
@@ -145,14 +195,21 @@ async function onLogin() {
         role: res.data.role
       })
 
-      ElMessage.success('登录成功')
-      router.push('/admin') // 登录成功跳转
+      // 根据角色显示不同的登录成功信息
+      if (res.data.role === 'visitor') {
+        ElMessage.success('登录成功，欢迎访问新闻网站')
+      } else {
+        ElMessage.success('登录成功，正在跳转到管理后台')
+      }
+      
+      // 根据角色跳转不同页面
+      redirectAfterLogin(res.data.role)
     } else {
       ElMessage.error(res.msg || '登录失败')
     }
   } catch (e) {
-    console.error(e)
-    ElMessage.error('请求异常，请稍后重试')
+    console.error('登录失败:', e)
+    ElMessage.error('登录失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -160,8 +217,6 @@ async function onLogin() {
 
 function forgotPassword() {
   ElMessage.info('忘记密码功能正在开发中')
-  // 实际项目中可以跳转到重置密码页面
-  // router.push('/reset-password')
 }
 
 function goToRegister() {
@@ -176,6 +231,7 @@ body {
   font-family: 'Helvetica Neue', Arial, sans-serif;
   background-color: #f0f2f5;
 }
+
 .login-container {
   height: 98vh;
   display: flex;
@@ -185,7 +241,7 @@ body {
 }
 
 .box-card {
-  width: 380px;
+  width: 400px;
   border-radius: 12px;
   box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1);
   overflow: hidden;
@@ -224,7 +280,6 @@ h2 {
 }
 
 :deep(.el-button--primary) {
-  /* background: #409EFF; */
   border-color: #409EFF;
 }
 
@@ -272,6 +327,26 @@ h2 {
   margin-top: 20px;
   color: #606266;
   font-size: 14px;
+}
+
+.test-accounts {
+  margin-top: 20px;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 3px solid #409EFF;
+}
+
+.test-accounts h4 {
+  margin: 0 0 10px 0;
+  color: #303133;
+  font-size: 14px;
+}
+
+.test-accounts p {
+  margin: 5px 0;
+  font-size: 12px;
+  color: #606266;
 }
 
 :deep(.el-link) {
